@@ -7,6 +7,9 @@ const checkoutConfiguration = window.Configuration;
 let formErrorsExist;
 let isValid = false;
 let checkout;
+
+let paypalTerminatedEarly = false;
+
 $('#dwfrm_billing').submit(function (e) {
   e.preventDefault();
 
@@ -83,6 +86,7 @@ checkoutConfiguration.paymentMethodsConfiguration = {
   },
   paypal: {
     environment: window.Configuration.environment,
+    showPayButton: true,
     intent: 'capture',
     onSubmit: (state, component) => {
       assignPaymentMethodValue();
@@ -92,21 +96,30 @@ checkoutConfiguration.paymentMethodsConfiguration = {
       paymentFromComponent(state.data, component);
     },
     onCancel: (data, component) => {
+      paypalTerminatedEarly = false;
       paymentFromComponent({ cancelTransaction: true }, component);
     },
     onError: (error, component) => {
+      paypalTerminatedEarly = false;
       if (component) {
         component.setStatus('ready');
       }
       document.querySelector('#showConfirmationForm').submit();
     },
     onAdditionalDetails: (state) => {
+      paypalTerminatedEarly = false;
       document.querySelector('#additionalDetailsHidden').value = JSON.stringify(
         state.data,
       );
       document.querySelector('#showConfirmationForm').submit();
     },
     onClick: (data, actions) => {
+      if(paypalTerminatedEarly) {
+        paymentFromComponent({ cancelTransaction: true });
+        paypalTerminatedEarly = false;
+        return actions.resolve();
+      }
+      paypalTerminatedEarly = true;
       $('#dwfrm_billing').trigger('submit');
       if (formErrorsExist) {
         return actions.reject();
@@ -428,7 +441,7 @@ function getPaymentMethods(paymentMethods) {
 /**
  * Makes an ajax call to the controller function PaymentFromComponent. Used by certain payment methods like paypal
  */
-function paymentFromComponent(data, component) {
+function paymentFromComponent(data, component = {}) {
   $.ajax({
     url: 'Adyen-PaymentFromComponent',
     type: 'post',
@@ -454,6 +467,11 @@ function paymentFromComponent(data, component) {
 
 // Submit the payment
 $('button[value="submit-payment"]').on('click', function () {
+  if(paypalTerminatedEarly) {
+    paymentFromComponent({ cancelTransaction: true });
+    paypalTerminatedEarly = false;
+    return false;
+  }
   if (document.querySelector('#selectedPaymentOption').value === 'AdyenPOS') {
     document.querySelector('#terminalId').value = document.querySelector(
       '#terminalList',
